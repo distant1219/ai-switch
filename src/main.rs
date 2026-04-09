@@ -7,7 +7,8 @@ mod error;
 mod target;
 mod types;
 
-use cli::{Cli, Commands, ProviderCommands, TargetCommands};
+use cli::{Cli, Commands, ModelCommands, ProviderCommands, TargetCommands};
+use types::ModelProfile;
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -16,23 +17,23 @@ fn main() -> anyhow::Result<()> {
         Commands::Init => config::init_config(),
         Commands::Provider(cmd) => handle_provider(cmd),
         Commands::Target(cmd) => handle_target(cmd),
-        Commands::Use { provider, target } => core::use_provider(&provider, &target),
+        Commands::Use { provider, target, model } => {
+            core::use_provider(&provider, &target, model.as_deref())
+        }
         Commands::Current => core::show_current(),
         Commands::Status => core::show_status(),
     }
 }
 
 fn handle_provider(cmd: ProviderCommands) -> anyhow::Result<()> {
-    let mut config = config::load_config()?;
-
     match cmd {
         ProviderCommands::Add { name } => {
+            let mut config = config::load_config()?;
             if config.providers.contains_key(&name) {
                 println!("Provider '{}' already exists", name);
                 return Ok(());
             }
 
-            // Interactive input
             use std::io::{self, Write};
 
             print!("API Key: ");
@@ -45,11 +46,6 @@ fn handle_provider(cmd: ProviderCommands) -> anyhow::Result<()> {
             let mut base_url = String::new();
             io::stdin().read_line(&mut base_url)?;
 
-            print!("Model (optional): ");
-            io::stdout().flush()?;
-            let mut model = String::new();
-            io::stdin().read_line(&mut model)?;
-
             let provider = types::Provider {
                 api_key: api_key.trim().to_string(),
                 base_url: if base_url.trim().is_empty() {
@@ -57,33 +53,41 @@ fn handle_provider(cmd: ProviderCommands) -> anyhow::Result<()> {
                 } else {
                     Some(base_url.trim().to_string())
                 },
-                model: if model.trim().is_empty() {
-                    None
-                } else {
-                    Some(model.trim().to_string())
-                },
+                model: None,
+                models: std::collections::HashMap::new(),
+                default_profile: None,
             };
 
             config.providers.insert(name.clone(), provider);
             config::save_config(&config)?;
             println!("Added provider '{}'", name);
+            println!("Use 'ai-switch provider model add {} <profile> --model <id>' to add model profiles", name);
             Ok(())
         }
         ProviderCommands::List => {
+            let config = config::load_config()?;
             if config.providers.is_empty() {
                 println!("No providers configured");
             } else {
                 println!("Configured providers:");
-                for name in config.providers.keys() {
-                    println!("  - {}", name);
+                for (name, provider) in &config.providers {
+                    if provider.has_profiles() {
+                        let profiles: Vec<&str> = provider.models.keys().map(|s| s.as_str()).collect();
+                        let default = provider.default_profile.as_deref().unwrap_or("(none)");
+                        println!("  - {} [models: {}] (default: {})", name, profiles.join(", "), default);
+                    } else {
+                        let model = provider.model.as_deref().unwrap_or("(none)");
+                        println!("  - {} (model: {})", name, model);
+                    }
                 }
             }
             Ok(())
         }
         ProviderCommands::Remove { name } => {
+            let mut config = config::load_config()?;
             if config.providers.remove(&name).is_some() {
-                // Remove from current mappings
                 config.current.retain(|_, v| v != &name);
+                config.current_model.remove(&name);
                 config::save_config(&config)?;
                 println!("Removed provider '{}'", name);
             } else {
@@ -93,6 +97,92 @@ fn handle_provider(cmd: ProviderCommands) -> anyhow::Result<()> {
         }
         ProviderCommands::Edit { name } => {
             println!("Edit provider '{}' (not implemented yet)", name);
+            Ok(())
+        }
+        ProviderCommands::Model(model_cmd) => handle_model(model_cmd),
+    }
+}
+
+fn handle_model(cmd: ModelCommands) -> anyhow::Result<()> {
+    match cmd {
+        ModelCommands::Add { provider, profile, model, display_name, default } => {
+            let mut config = config::load_config()?;
+            let prov = config.providers.get_mut(&provider)
+                .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", provider))?;
+
+            if prov.models.contains_key(&profile) {
+                println!("Profile '{}' already exists in provider '{}'", profile, provider);
+                return Ok(());
+            }
+
+            prov.models.insert(profile.clone(), ModelProfile {
+                model,
+                display_name,
+            });
+
+            if default || prov.default_profile.is_none() {
+                prov.default_profile = Some(profile.clone());
+            }
+
+            config::save_config(&config)?;
+            println!("Added profile '{}' to provider '{}'", profile, provider);
+            Ok(())
+        }
+        ModelCommands::List { provider } => {
+            let config = config::load_config()?;
+            let prov = config.providers.get(&provider)
+                .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", provider))?;
+
+            if prov.models.is_empty() {
+                println!("No model profiles configured for '{}'", provider);
+                if let Some(model) = &prov.model {
+                    println!("  Legacy model: {}", model);
+                }
+            } else {
+                let default = prov.default_profile.as_deref().unwrap_or("(none)");
+                println!("Model profiles for '{}' (default: {}):", provider, default);
+                for (name, profile) in &prov.models {
+                    let display = profile.display_name.as_deref().unwrap_or("");
+                    let marker = if Some(name) == prov.default_profile.as_ref() { " *" } else { "" };
+                    if display.is_empty() {
+                        println!("  - {} ({}){}", name, profile.model, marker);
+                    } else {
+                        println!("  - {} ({}) - {}{}", name, profile.model, display, marker);
+                    }
+                }
+            }
+            Ok(())
+        }
+        ModelCommands::Remove { provider, profile } => {
+            let mut config = config::load_config()?;
+            let prov = config.providers.get_mut(&provider)
+                .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", provider))?;
+
+            if prov.models.remove(&profile).is_some() {
+                // If removed profile was default, try to set a new default
+                if prov.default_profile.as_deref() == Some(&profile) {
+                    prov.default_profile = prov.models.keys().next().cloned();
+                }
+                config::save_config(&config)?;
+                println!("Removed profile '{}' from provider '{}'", profile, provider);
+            } else {
+                println!("Profile '{}' not found in provider '{}'", profile, provider);
+            }
+            Ok(())
+        }
+        ModelCommands::SetDefault { provider, profile } => {
+            let mut config = config::load_config()?;
+            let prov = config.providers.get_mut(&provider)
+                .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", provider))?;
+
+            if !prov.models.contains_key(&profile) {
+                println!("Profile '{}' not found in provider '{}'", profile, provider);
+                return Ok(());
+            }
+
+            prov.default_profile = Some(profile.clone());
+            config::save_config(&config)?;
+            println!("Set '{}' as default profile for provider '{}'", profile, provider);
             Ok(())
         }
     }
@@ -108,7 +198,6 @@ fn handle_target(cmd: TargetCommands) -> anyhow::Result<()> {
                 return Ok(());
             }
 
-            // Validate target type
             let valid_types = ["claude-code", "cursor", "aider"];
             if !valid_types.contains(&target_type.as_str()) {
                 println!("Invalid target type: {}", target_type);
@@ -116,15 +205,14 @@ fn handle_target(cmd: TargetCommands) -> anyhow::Result<()> {
                 return Ok(());
             }
 
-            // Determine default config path based on target type
             let config_path = match target_type.as_str() {
                 "claude-code" => dirs::home_dir()
-                    .map(|h| h.join(".claude").join("CLAUDE.md"))
+                    .map(|h| h.join(".claude").join("settings.json"))
                     .map(|p| p.to_string_lossy().to_string()),
                 "cursor" => dirs::home_dir()
-                    .map(|h| h.join(".cursor").join("config.json"))
+                    .map(|h| h.join(".config").join("Cursor").join("User").join("settings.json"))
                     .map(|p| p.to_string_lossy().to_string()),
-                "aider" => Some(".env".to_string()),
+                "aider" => Some(".aider.conf.yml".to_string()),
                 _ => None,
             };
 

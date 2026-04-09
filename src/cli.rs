@@ -26,6 +26,9 @@ pub enum Commands {
         /// Target tool name
         #[arg(short, long)]
         target: String,
+        /// Model profile name (for providers with multiple models)
+        #[arg(short, long)]
+        model: Option<String>,
     },
     /// Show current configuration
     Current,
@@ -51,6 +54,48 @@ pub enum ProviderCommands {
     Edit {
         /// Provider profile name
         name: String,
+    },
+    /// Manage model profiles for a provider
+    #[command(subcommand)]
+    Model(ModelCommands),
+}
+
+#[derive(Subcommand)]
+pub enum ModelCommands {
+    /// Add a model profile to a provider
+    Add {
+        /// Provider name
+        provider: String,
+        /// Profile name (e.g., haiku, sonnet, opus)
+        profile: String,
+        /// Model ID (e.g., claude-sonnet-4-20250514)
+        #[arg(short, long)]
+        model: String,
+        /// Display name for the profile
+        #[arg(short, long)]
+        display_name: Option<String>,
+        /// Set as default profile
+        #[arg(long)]
+        default: bool,
+    },
+    /// List model profiles for a provider
+    List {
+        /// Provider name
+        provider: String,
+    },
+    /// Remove a model profile from a provider
+    Remove {
+        /// Provider name
+        provider: String,
+        /// Profile name
+        profile: String,
+    },
+    /// Set the default model profile for a provider
+    SetDefault {
+        /// Provider name
+        provider: String,
+        /// Profile name
+        profile: String,
     },
 }
 
