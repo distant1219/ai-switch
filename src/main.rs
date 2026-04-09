@@ -2,6 +2,7 @@ use clap::Parser;
 
 mod cli;
 mod config;
+mod core;
 mod error;
 mod types;
 
@@ -14,18 +15,9 @@ fn main() -> anyhow::Result<()> {
         Commands::Init => config::init_config(),
         Commands::Provider(cmd) => handle_provider(cmd),
         Commands::Target(cmd) => handle_target(cmd),
-        Commands::Use { provider, target } => {
-            println!("Using provider '{}' for target '{}'", provider, target);
-            Ok(())
-        }
-        Commands::Current => {
-            println!("Showing current configuration");
-            Ok(())
-        }
-        Commands::Status => {
-            println!("Showing full status");
-            Ok(())
-        }
+        Commands::Use { provider, target } => core::use_provider(&provider, &target),
+        Commands::Current => core::show_current(),
+        Commands::Status => core::show_status(),
     }
 }
 
