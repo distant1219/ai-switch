@@ -106,17 +106,76 @@ fn handle_provider(cmd: ProviderCommands) -> anyhow::Result<()> {
 }
 
 fn handle_target(cmd: TargetCommands) -> anyhow::Result<()> {
+    let mut config = config::load_config()?;
+
     match cmd {
         TargetCommands::Add { name, target_type } => {
-            println!("Adding target: {} (type: {})", name, target_type);
+            if config.targets.contains_key(&name) {
+                println!("Target '{}' already exists", name);
+                return Ok(());
+            }
+
+            // Validate target type
+            let valid_types = ["claude-code", "cursor", "aider"];
+            if !valid_types.contains(&target_type.as_str()) {
+                println!("Invalid target type: {}", target_type);
+                println!("Valid types: {}", valid_types.join(", "));
+                return Ok(());
+            }
+
+            // Determine default config path based on target type
+            let config_path = match target_type.as_str() {
+                "claude-code" => dirs::home_dir()
+                    .map(|h| h.join(".claude").join("CLAUDE.md"))
+                    .map(|p| p.to_string_lossy().to_string()),
+                "cursor" => dirs::home_dir()
+                    .map(|h| h.join(".cursor").join("config.json"))
+                    .map(|p| p.to_string_lossy().to_string()),
+                "aider" => Some(".env".to_string()),
+                _ => None,
+            };
+
+            let config_path = match config_path {
+                Some(path) => path,
+                None => {
+                    use std::io::{self, Write};
+                    print!("Config path: ");
+                    io::stdout().flush()?;
+                    let mut path = String::new();
+                    io::stdin().read_line(&mut path)?;
+                    path.trim().to_string()
+                }
+            };
+
+            let target = types::Target {
+                target_type,
+                config_path,
+            };
+
+            config.targets.insert(name.clone(), target);
+            config::save_config(&config)?;
+            println!("Added target '{}'", name);
             Ok(())
         }
         TargetCommands::List => {
-            println!("Listing targets");
+            if config.targets.is_empty() {
+                println!("No targets configured");
+            } else {
+                println!("Configured targets:");
+                for (name, target) in &config.targets {
+                    println!("  - {} (type: {}, path: {})", name, target.target_type, target.config_path);
+                }
+            }
             Ok(())
         }
         TargetCommands::Remove { name } => {
-            println!("Removing target: {}", name);
+            if config.targets.remove(&name).is_some() {
+                config.current.remove(&name);
+                config::save_config(&config)?;
+                println!("Removed target '{}'", name);
+            } else {
+                println!("Target '{}' not found", name);
+            }
             Ok(())
         }
     }
