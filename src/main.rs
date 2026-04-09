@@ -4,6 +4,7 @@ mod cli;
 mod config;
 mod core;
 mod error;
+mod target;
 mod types;
 
 use cli::{Cli, Commands, ProviderCommands, TargetCommands};
