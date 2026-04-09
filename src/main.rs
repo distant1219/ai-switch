@@ -46,7 +46,7 @@ fn handle_provider(cmd: ProviderCommands) -> anyhow::Result<()> {
             let mut base_url = String::new();
             io::stdin().read_line(&mut base_url)?;
 
-            let provider = types::Provider {
+            let mut provider = types::Provider {
                 api_key: api_key.trim().to_string(),
                 base_url: if base_url.trim().is_empty() {
                     None
@@ -58,10 +58,61 @@ fn handle_provider(cmd: ProviderCommands) -> anyhow::Result<()> {
                 default_profile: None,
             };
 
+            // Ask if user wants to add Claude model profiles
+            print!("\nAdd Claude model presets (haiku/sonnet/opus)? [y/N]: ");
+            io::stdout().flush()?;
+            let mut add_models = String::new();
+            io::stdin().read_line(&mut add_models)?;
+
+            if add_models.trim().to_lowercase() == "y" {
+                // Prompt for each model
+                print!("Haiku model ID [claude-haiku-4-20250514]: ");
+                io::stdout().flush()?;
+                let mut haiku = String::new();
+                io::stdin().read_line(&mut haiku)?;
+                let haiku = haiku.trim();
+                let haiku_model = if haiku.is_empty() { "claude-haiku-4-20250514" } else { haiku };
+
+                print!("Sonnet model ID [claude-sonnet-4-20250514]: ");
+                io::stdout().flush()?;
+                let mut sonnet = String::new();
+                io::stdin().read_line(&mut sonnet)?;
+                let sonnet = sonnet.trim();
+                let sonnet_model = if sonnet.is_empty() { "claude-sonnet-4-20250514" } else { sonnet };
+
+                print!("Opus model ID [claude-opus-4-20250514]: ");
+                io::stdout().flush()?;
+                let mut opus = String::new();
+                io::stdin().read_line(&mut opus)?;
+                let opus = opus.trim();
+                let opus_model = if opus.is_empty() { "claude-opus-4-20250514" } else { opus };
+
+                // Add models to provider
+                provider.models.insert("haiku".to_string(), types::ModelProfile {
+                    model: haiku_model.to_string(),
+                    display_name: Some("Haiku (fast)".to_string()),
+                });
+                provider.models.insert("sonnet".to_string(), types::ModelProfile {
+                    model: sonnet_model.to_string(),
+                    display_name: Some("Sonnet (balanced)".to_string()),
+                });
+                provider.models.insert("opus".to_string(), types::ModelProfile {
+                    model: opus_model.to_string(),
+                    display_name: Some("Opus (smart)".to_string()),
+                });
+
+                // Set sonnet as default
+                provider.default_profile = Some("sonnet".to_string());
+
+                println!("\nAdded model profiles: haiku, sonnet, opus (default: sonnet)");
+            }
+
             config.providers.insert(name.clone(), provider);
             config::save_config(&config)?;
-            println!("Added provider '{}'", name);
-            println!("Use 'ai-switch provider model add {} <profile> --model <id>' to add model profiles", name);
+            println!("\nAdded provider '{}'", name);
+            if !config.providers[&name].has_profiles() {
+                println!("Tip: Use 'ai-switch provider model add {} <profile> --model <id>' to add model profiles", name);
+            }
             Ok(())
         }
         ProviderCommands::List => {
