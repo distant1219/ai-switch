@@ -28,6 +28,7 @@ struct RawProvider {
     model: Option<String>,
     models: Option<HashMap<String, RawModelProfile>>,
     default_profile: Option<String>,
+    custom_model_option: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,6 +91,7 @@ fn migrate_provider(raw: RawProvider) -> Provider {
         model,
         models,
         default_profile,
+        custom_model_option: raw.custom_model_option,
     }
 }
 

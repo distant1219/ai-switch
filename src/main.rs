@@ -56,6 +56,7 @@ fn handle_provider(cmd: ProviderCommands) -> anyhow::Result<()> {
                 model: None,
                 models: std::collections::HashMap::new(),
                 default_profile: None,
+                custom_model_option: None,
             };
 
             // Ask if user wants to add Claude model profiles
@@ -105,6 +106,15 @@ fn handle_provider(cmd: ProviderCommands) -> anyhow::Result<()> {
                 provider.default_profile = Some("sonnet".to_string());
 
                 println!("\nAdded model profiles: haiku, sonnet, opus (default: sonnet)");
+            }
+
+            // Ask for custom model option
+            print!("\nCustom model option (ANTHROPIC_CUSTOM_MODEL_OPTION, optional): ");
+            io::stdout().flush()?;
+            let mut custom_model_option = String::new();
+            io::stdin().read_line(&mut custom_model_option)?;
+            if !custom_model_option.trim().is_empty() {
+                provider.custom_model_option = Some(custom_model_option.trim().to_string());
             }
 
             config.providers.insert(name.clone(), provider);

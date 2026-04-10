@@ -19,6 +19,8 @@ pub struct Provider {
     pub models: HashMap<String, ModelProfile>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_model_option: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

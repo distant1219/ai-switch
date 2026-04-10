@@ -13,7 +13,7 @@ impl TargetAdapter for ClaudeCodeAdapter {
         provider: &Provider,
         target: &Target,
         profile_name: Option<&str>,
-        model_profile: &ModelProfile,
+        _model_profile: &ModelProfile,
     ) -> Result<()> {
         let config_path = shellexpand::tilde(&target.config_path).to_string();
         let path = Path::new(&config_path);
@@ -57,8 +57,10 @@ impl TargetAdapter for ClaudeCodeAdapter {
         let base_url = provider.base_url.as_deref().unwrap_or("https://api.anthropic.com");
         set_env(env, "ANTHROPIC_BASE_URL", base_url.to_string());
 
-        // Set the active model
-        set_env(env, "ANTHROPIC_MODEL", model_profile.model.clone());
+        // Set custom model option if configured
+        if let Some(custom_opt) = &provider.custom_model_option {
+            set_env(env, "ANTHROPIC_CUSTOM_MODEL_OPTION", custom_opt.clone());
+        }
 
         // Write all model profiles as ANTHROPIC_DEFAULT_*_MODEL env vars
         for (name, profile) in &provider.models {
